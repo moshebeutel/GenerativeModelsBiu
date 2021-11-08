@@ -11,7 +11,6 @@ import numpy as np
 """Additive coupling layer.
 """
 
-
 class AdditiveCoupling(nn.Module):
     def __init__(self, in_out_dim, mid_dim, hidden, mask_config):
         """Initialize an additive coupling layer.
@@ -85,6 +84,20 @@ class AffineCoupling(nn.Module):
         self._hidden = hidden
         self._mask_config = mask_config
 
+        # shift network
+        self.shift_input_layer  = nn.Linear(in_out_dim // 2, mid_dim)
+        shift_layer_list = [nn.Linear(mid_dim, mid_dim) for i in range(hidden)]
+        self.shift_hidden_layers = nn.ModuleList(shift_layer_list)
+        self.shift_output_layer = nn.Linear(mid_dim, in_out_dim // 2)
+
+        # scale network
+        self.scale_input_layer  = nn.Linear(in_out_dim // 2, mid_dim)
+        scale_layer_list = [nn.Linear(mid_dim, mid_dim) for i in range(hidden)]
+        self.scale_hidden_layers = nn.ModuleList(scale_layer_list)
+        self.scale_output_layer = nn.Linear(mid_dim, in_out_dim // 2)
+
+
+
     def forward(self, x, log_det_J, reverse=False):
         """Forward pass.
 
@@ -96,6 +109,28 @@ class AffineCoupling(nn.Module):
             transformed tensor and updated log-determinant of Jacobian.
         """
         # TODO fill in
+        n_batches = x.size(dim=0)
+        even = lambda x: x.view(n_batches, -1)[:, 0::2]
+        odd = lambda x: x.view(n_batches, -1)[:, 1::2]
+
+        if self._mask_config:
+            fixed_entries, shifted_entries = even(x), odd(x)
+        else:
+            shifted_entries, fixed_entries = even(x), odd(x)
+
+        x = F.relu(self.shift_input_layer(fixed_entries))
+        for hidden in self.shift_hidden_layers:
+            x = F.relu(hidden(x))
+        shift = self.shift_output_layer(x)
+
+        x = F.relu(self.scale_input_layer(fixed_entries))
+        for hidden in self.scale_hidden_layers:
+            x = F.relu(hidden(x))
+        scale = self.scale_output_layer(x)
+
+        shifted_entries = (shifted_entries - shift) / scale if reverse else  scale * shifted_entries + shift
+
+        return x, log_det_J
 
 
 """Log-scaling layer.
