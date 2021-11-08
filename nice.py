@@ -185,8 +185,8 @@ class NICE(nn.Module):
         """
         # TODO fill in
         x, _ = self.scaling(z, reverse=True)
-        for i in reversed(range(len(self.coupling))):
-            x, _ = self.coupling[i](x, 0, reverse=True)
+        for coupling_layer in reversed(self.coupling_module_list):
+            x, _ = coupling_layer(x, 0, reverse=True)
         return x
 
     def f(self, x):
