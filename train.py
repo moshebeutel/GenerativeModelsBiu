@@ -11,11 +11,21 @@ import matplotlib.pyplot as plt
 import nice
 
 
-def train(flow, trainloader, optimizer, epoch):
+def train(flow, trainloader, optimizer, epoch, device):
     flow.train()  # set to training mode
-    for inputs,_ in trainloader:
-        inputs =  inputs.view(inputs.shape[0],inputs.shape[1]*inputs.shape[2]*inputs.shape[3]) #change  shape from BxCxHxW to Bx(C*H*W)
+    running_loss = 0
+    batch_num = 1
+    for inputs, _ in trainloader:
+        batch_num += 1
+        inputs = inputs.view(inputs.shape[0],inputs.shape[1]*inputs.shape[2]*inputs.shape[3]) #change  shape from BxCxHxW to Bx(C*H*W)
+        inputs = inputs.to('cpu')
         #TODO Fill in
+        optimizer.zero_grad()
+        loss = -flow(inputs).mean()
+        running_loss += float(loss)
+        loss.backward()
+        optimizer.step()
+    return running_loss / batch_num
 
 def test(flow, testloader, filename, epoch, sample_shape):
     flow.eval()  # set to inference mode
@@ -49,7 +59,7 @@ def main(args):
         trainset = torchvision.datasets.FashionMNIST(root='~/torch/data/FashionMNIST',
             train=True, download=True, transform=transform)
         trainloader = torch.utils.data.DataLoader(trainset,
-            batch_size=batch_size, shuffle=True, num_workers=2)
+            batch_size=args.batch_size, shuffle=True, num_workers=2)
         testset = torchvision.datasets.FashionMNIST(root='./data/FashionMNIST',
             train=False, download=True, transform=transform)
         testloader = torch.utils.data.DataLoader(testset,
@@ -57,30 +67,46 @@ def main(args):
     else:
         raise ValueError('Dataset not implemented')
 
+    z = trainset.data[0].size()
     model_save_filename = '%s_' % args.dataset \
              + 'batch%d_' % args.batch_size \
              + 'coupling%d_' % args.coupling \
-             + 'coupling_type%d_' % args.coupling_type \
+             + 'coupling_type%s_' % args.coupling_type \
              + 'mid%d_' % args.mid_dim \
              + 'hidden%d_' % args.hidden \
              + '.pt'
-
+    full_dim = trainset.data[0].view(-1).size(dim=0)
     flow = nice.NICE(
                 prior=args.prior,
                 coupling=args.coupling,
                 coupling_type=args.coupling_type,
-                in_out_dim=full_dim, 
+                in_out_dim=full_dim,
                 mid_dim=args.mid_dim,
                 hidden=args.hidden,
-                device=device).to(device)
+                device=device).to('cpu')
 
     optimizer = torch.optim.Adam(
         flow.parameters(), lr=args.lr)
 
     #TODO fill in
+    losses = []
+    last_loss = 10000000
+    for epoch in range(args.epochs):
+        epoch_loss = train(flow, trainloader, optimizer, epoch, device)
+        print(f'train epoch num {epoch}, loss - {epoch_loss}')
+        losses.append(epoch_loss)
+        if last_loss - epoch_loss < 0.01:
+            break
+        last_loss = epoch_loss
 
+    fig = plt.figure()
+    fig.gca().plot(losses)
+    plt.show()
 
 if __name__ == '__main__':
+
+    # torch.device('cuda:42212')
+    # torch.cuda.is_available()
     parser = argparse.ArgumentParser('')
     parser.add_argument('--dataset',
                         help='dataset to be modeled.',

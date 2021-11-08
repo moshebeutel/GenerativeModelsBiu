@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.distributions.transforms import Transform, SigmoidTransform, AffineTransform
 from torch.distributions import Uniform, TransformedDistribution
 import numpy as np
@@ -26,11 +27,15 @@ class AdditiveCoupling(nn.Module):
         self._mid_dim = mid_dim
         self._hidden = hidden
         self._mask_config = mask_config
-        self.shift = nn.ModuleList([nn.Parameter(
-            torch.zeros((1, mid_dim)), requires_grad=True)] * hidden)
-        # hidden_layers = [nn.Linear(mid_dim, mid_dim)] * hidden
-        # net_list = [nn.Linear(in_out_dim, mid_dim)] + hidden_layers + [nn.Linear(mid_dim, in_out_dim)]
-        # self.net = nn.ModuleList(net_list)
+
+        self.input_layer  = nn.Linear(in_out_dim // 2, mid_dim)
+
+        layer_list = [nn.Linear(mid_dim, mid_dim) for i in range(hidden)]
+        self.hidden_layers = nn.ModuleList(layer_list)
+
+        self.output_layer = nn.Linear(mid_dim, in_out_dim // 2)
+
+        # Get even/ odd dimensions as a vector:
 
     def forward(self, x, log_det_J, reverse=False):
         """Forward pass.
@@ -42,15 +47,23 @@ class AdditiveCoupling(nn.Module):
         Returns:
             transformed tensor and updated log-determinant of Jacobian.
         """
+
         # TODO fill in
-        _get_even = lambda xs: xs[:, 0::2]
-        _get_odd = lambda xs: xs[:, 1::2]
+        n_batches = x.size(dim=0)
+        even = lambda x: x.view(n_batches, -1)[:, 0::2]
+        odd = lambda x: x.view(n_batches, -1)[:, 1::2]
 
-        for f in self.shift:
-            x = _get_odd(x)
-            x += f
-            log_det_J += f.sum()
+        if self._mask_config:
+            fixed_entries, shifted_entries = even(x), odd(x)
+        else:
+            shifted_entries, fixed_entries = even(x), odd(x)
 
+        fixed_entries = F.relu(self.input_layer(fixed_entries))
+        for i in range(len(self.hidden_layers)):
+            fixed_entries = F.relu(self.hidden_layers[i](fixed_entries))
+        shift = self.output_layer(fixed_entries)
+
+        shifted_entries = shifted_entries - shift if reverse else shifted_entries + shift
 
         return x, log_det_J
 
@@ -112,10 +125,11 @@ class Scaling(nn.Module):
         """
         scale = torch.exp(self.scale) + self.eps
         # TODO fill in
-
-        scale = torch.inverse(self.scale - self.eps) if reverse else scale
+        log_det_J = torch.sum(self.scale) + self.eps
+        if reverse:
+            scale = torch.exp(-self.scale) + self.eps
         x *= scale
-        return x
+        return x, log_det_J
 
 
 """Standard logistic distribution.
@@ -152,7 +166,14 @@ class NICE(nn.Module):
         self.coupling = coupling
         self.coupling_type = coupling_type
 
+        coupling_layers = []
         # TODO fill in
+        for i in range(coupling):
+            layer = AdditiveCoupling(in_out_dim, mid_dim, hidden, mask_config=i % 2)
+            coupling_layers.append(layer)
+
+        self.coupling_module_list = nn.ModuleList(coupling_layers)
+        self.scaling = Scaling(in_out_dim)
 
     def f_inverse(self, z):
         """Transformation g: Z -> X (inverse of f).
@@ -163,6 +184,10 @@ class NICE(nn.Module):
             transformed tensor in data space X.
         """
         # TODO fill in
+        x, _ = self.scaling(z, reverse=True)
+        for i in reversed(range(len(self.coupling))):
+            x, _ = self.coupling[i](x, 0, reverse=True)
+        return x
 
     def f(self, x):
         """Transformation f: X -> Z (inverse of g).
@@ -173,6 +198,13 @@ class NICE(nn.Module):
             transformed tensor in latent space Z and log determinant Jacobian
         """
         # TODO fill in
+        log_det_J = 0
+        for coupling_layer in self.coupling_module_list:
+            x, ldj = coupling_layer(x, log_det_J)
+            log_det_J += ldj
+        x, ldj = self.scaling(x)
+        log_det_J += ldj
+        return x, log_det_J
 
     def log_prob(self, x):
         """Computes data log-likelihood.
@@ -199,6 +231,8 @@ class NICE(nn.Module):
         """
         z = self.prior.sample((size, self.in_out_dim)).to(self.device)
         # TODO
+        return self.f_inverse(z)
+
 
     def forward(self, x):
         """Forward pass.
