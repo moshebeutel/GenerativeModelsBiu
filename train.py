@@ -161,7 +161,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr',
                         help='initial learning rate.',
                         type=float,
-                        default=1e-3)
+                        default=1e-4)
 
     args = parser.parse_args()
     main(args)

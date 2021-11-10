@@ -57,10 +57,10 @@ class AdditiveCoupling(nn.Module):
         else:
             shifted_entries, fixed_entries = even(x), odd(x)
 
-        fixed_entries = F.relu(self.input_layer(fixed_entries))
+        shift = F.relu(self.input_layer(fixed_entries))
         for i in range(len(self.hidden_layers)):
-            fixed_entries = F.relu(self.hidden_layers[i](fixed_entries))
-        shift = self.output_layer(fixed_entries)
+            shift = F.relu(self.hidden_layers[i](shift))
+        shift = self.output_layer(shift)
 
         shifted_entries = shifted_entries - shift if reverse else shifted_entries + shift
 
@@ -118,17 +118,19 @@ class AffineCoupling(nn.Module):
         else:
             shifted_entries, fixed_entries = even(x), odd(x)
 
-        x = F.relu(self.shift_input_layer(fixed_entries))
+        shift = F.relu(self.shift_input_layer(fixed_entries))
         for hidden in self.shift_hidden_layers:
-            x = F.relu(hidden(x))
-        shift = self.shift_output_layer(x)
+            shift = F.relu(hidden(shift))
+        shift = self.shift_output_layer(shift)
 
-        x = F.relu(self.scale_input_layer(fixed_entries))
+        scale = F.relu(self.scale_input_layer(fixed_entries))
         for hidden in self.scale_hidden_layers:
-            x = F.relu(hidden(x))
-        scale = self.scale_output_layer(x)
+            scale = F.relu(hidden(scale))
+        scale = self.scale_output_layer(scale)
 
         shifted_entries = (shifted_entries - shift) / scale if reverse else  scale * shifted_entries + shift
+
+        log_det_J = log_det_J -  scale.sum(dim=[1,2,3]) if reverse else log_det_J + scale.sum(dim=[1,2,3])
 
         return x, log_det_J
 
@@ -204,7 +206,8 @@ class NICE(nn.Module):
         coupling_layers = []
         # TODO fill in
         for i in range(coupling):
-            layer = AdditiveCoupling(in_out_dim, mid_dim, hidden, mask_config=i % 2)
+            layer = AdditiveCoupling(in_out_dim, mid_dim, hidden, mask_config=i % 2) if coupling_type == 'additive' \
+                else AffineCoupling(in_out_dim, mid_dim, hidden, mask_config=i%2)
             coupling_layers.append(layer)
 
         self.coupling_module_list = nn.ModuleList(coupling_layers)
