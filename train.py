@@ -14,6 +14,7 @@ import datetime
 
 def train(flow, trainloader, optimizer, epoch, device):
     flow.train()  # set to training mode
+    torch.autograd.set_detect_anomaly(True)
     running_loss = 0
     batch_num = 1
     for inputs, _ in trainloader:

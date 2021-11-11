@@ -34,8 +34,6 @@ class AdditiveCoupling(nn.Module):
 
         self.output_layer = nn.Linear(mid_dim, in_out_dim // 2)
 
-        # Get even/ odd dimensions as a vector:
-
     def forward(self, x, log_det_J, reverse=False):
         """Forward pass.
 
@@ -48,22 +46,22 @@ class AdditiveCoupling(nn.Module):
         """
 
         # TODO fill in
-        n_batches = x.size(dim=0)
-        even = lambda x: x.view(n_batches, -1)[:, 0::2]
-        odd = lambda x: x.view(n_batches, -1)[:, 1::2]
+        shifted_entries, fixed_entries = (x[:, 1::2], x[:, 0::2]) if self._mask_config \
+            else (x[:, 0::2], x[:, 1::2])
 
-        if self._mask_config:
-            fixed_entries, shifted_entries = even(x), odd(x)
-        else:
-            shifted_entries, fixed_entries = even(x), odd(x)
-
-        shift = F.relu(self.input_layer(fixed_entries))
+        y = F.relu(self.input_layer(fixed_entries))
         for i in range(len(self.hidden_layers)):
-            shift = F.relu(self.hidden_layers[i](shift))
-        shift = self.output_layer(shift)
+            y = F.relu(self.hidden_layers[i](y))
+        shift = self.output_layer(y)
+        
+        shifted_entries = shifted_entries - shift if reverse else shifted_entries + shift         
 
-        shifted_entries = shifted_entries - shift if reverse else shifted_entries + shift
-
+        tmp = torch.ones_like(x)
+        
+        tmp[:, 1::2], tmp[:, 0::2] = (shifted_entries, fixed_entries) if self._mask_config \
+             else (fixed_entries,shifted_entries)
+        
+        x = tmp
         return x, log_det_J
 
 
@@ -126,11 +124,13 @@ class AffineCoupling(nn.Module):
         scale = F.relu(self.scale_input_layer(fixed_entries))
         for hidden in self.scale_hidden_layers:
             scale = F.relu(hidden(scale))
-        scale = self.scale_output_layer(scale)
+        scale = F.relu(self.scale_output_layer(scale))
 
         shifted_entries = (shifted_entries - shift) / scale if reverse else  scale * shifted_entries + shift
 
-        log_det_J = log_det_J -  scale.sum(dim=[1,2,3]) if reverse else log_det_J + scale.sum(dim=[1,2,3])
+        sum_log_scale = torch.sum(torch.log(scale + 0.0001).view(scale.shape[0],-1), 1)
+
+        log_det_J = log_det_J -  sum_log_scale if reverse else log_det_J + sum_log_scale
 
         return x, log_det_J
 
@@ -167,6 +167,32 @@ class Scaling(nn.Module):
             scale = torch.exp(-self.scale) + self.eps
         x *= scale
         return x, log_det_J
+    # def __init__(self, dim):
+    #     """Initialize a (log-)scaling layer.
+
+    #     Args:
+    #         dim: input/output dimensions.
+    #     """
+    #     super(Scaling, self).__init__()
+    #     self.scale = nn.Parameter(
+    #         torch.zeros((1, dim)), requires_grad=True)
+    #     self.eps = 1e-5
+
+    # def forward(self, x, reverse=False):
+    #     """Forward pass.
+
+    #     Args:
+    #         x: input tensor.
+    #         reverse: True in inference mode, False in sampling mode.
+    #     Returns:
+    #         transformed tensor and log-determinant of Jacobian.
+    #     """
+    #     log_det_J = torch.sum(self.scale)+self.eps
+    #     if reverse:
+    #         x = x * torch.exp(-self.scale)
+    #     else:
+    #         x = x * torch.exp(self.scale)
+    #     return x, log_det_J
 
 
 """Standard logistic distribution.
@@ -236,7 +262,7 @@ class NICE(nn.Module):
             transformed tensor in latent space Z and log determinant Jacobian
         """
         # TODO fill in
-        log_det_J = 0
+        log_det_J = torch.zeros(x.shape[0])
         for coupling_layer in self.coupling_module_list:
             x, ldj = coupling_layer(x, log_det_J)
             log_det_J += ldj
