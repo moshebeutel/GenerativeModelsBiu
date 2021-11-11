@@ -56,7 +56,7 @@ class AdditiveCoupling(nn.Module):
         
         shifted_entries = shifted_entries - shift if reverse else shifted_entries + shift         
 
-        tmp = torch.ones_like(x)
+        tmp = torch.ones_like(x).to(device=x.device)
         
         tmp[:, 1::2], tmp[:, 0::2] = (shifted_entries, fixed_entries) if self._mask_config \
              else (fixed_entries,shifted_entries)
@@ -167,33 +167,6 @@ class Scaling(nn.Module):
             scale = torch.exp(-self.scale) + self.eps
         x *= scale
         return x, log_det_J
-    # def __init__(self, dim):
-    #     """Initialize a (log-)scaling layer.
-
-    #     Args:
-    #         dim: input/output dimensions.
-    #     """
-    #     super(Scaling, self).__init__()
-    #     self.scale = nn.Parameter(
-    #         torch.zeros((1, dim)), requires_grad=True)
-    #     self.eps = 1e-5
-
-    # def forward(self, x, reverse=False):
-    #     """Forward pass.
-
-    #     Args:
-    #         x: input tensor.
-    #         reverse: True in inference mode, False in sampling mode.
-    #     Returns:
-    #         transformed tensor and log-determinant of Jacobian.
-    #     """
-    #     log_det_J = torch.sum(self.scale)+self.eps
-    #     if reverse:
-    #         x = x * torch.exp(-self.scale)
-    #     else:
-    #         x = x * torch.exp(self.scale)
-    #     return x, log_det_J
-
 
 """Standard logistic distribution.
 """
@@ -262,7 +235,7 @@ class NICE(nn.Module):
             transformed tensor in latent space Z and log determinant Jacobian
         """
         # TODO fill in
-        log_det_J = torch.zeros(x.shape[0])
+        log_det_J = torch.zeros(x.shape[0]).to(self.device)
         for coupling_layer in self.coupling_module_list:
             x, ldj = coupling_layer(x, log_det_J)
             log_det_J += ldj
@@ -282,7 +255,7 @@ class NICE(nn.Module):
         """
         z, log_det_J = self.f(x)
         log_det_J -= np.log(256) * self.in_out_dim  # log det for rescaling from [0.256] (after dequantization) to [0,1]
-        log_ll = torch.sum(self.prior.log_prob(z), dim=1)
+        log_ll = torch.sum(self.prior.log_prob(z.to('cpu')), dim=1).to(x.device)
         return log_ll + log_det_J
 
     def sample(self, size):

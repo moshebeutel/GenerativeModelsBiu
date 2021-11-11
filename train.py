@@ -51,7 +51,7 @@ def test(flow, testloader, filename, epoch, sample_shape, device):
 
 def main(args):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    device = 'cpu'
+    # device = 'cpu'
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (1.,)),
@@ -162,7 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr',
                         help='initial learning rate.',
                         type=float,
-                        default=1e-4)
+                        default=1e-2)
 
     args = parser.parse_args()
     main(args)
