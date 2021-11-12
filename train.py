@@ -14,7 +14,6 @@ import datetime
 
 def train(flow, trainloader, optimizer, epoch, device):
     flow.train()  # set to training mode
-    torch.autograd.set_detect_anomaly(True)
     running_loss = 0
     batch_num = 1
     for inputs, _ in trainloader:
@@ -36,7 +35,7 @@ def test(flow, testloader, filename, epoch, sample_shape, device):
     with torch.no_grad():
         num_samples = 100
         samples = flow.sample(num_samples).cpu()
-        samples = samples.view(num_samples, sample_shape[0] , sample_shape[1] , sample_shape[2])  
+        samples = samples.view(num_samples, sample_shape[0] , sample_shape[1] , sample_shape[2])
         torchvision.utils.save_image(torchvision.utils.make_grid(samples),
                                      './samples/' + filename + 'epoch%d.png' % epoch)
         # TODO full in
@@ -120,8 +119,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    # torch.device('cuda:42212')
-    # torch.cuda.is_available()list(range(epoch + 2))
     parser = argparse.ArgumentParser('')
     parser.add_argument('--dataset',
                         help='dataset to be modeled.',
@@ -146,7 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('--coupling-type',
                         help='.',
                         type=str,
-                        default='additive')
+                        default='adaptive')
     parser.add_argument('--coupling',
                         help='.',
                         # type=int,
@@ -162,7 +159,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr',
                         help='initial learning rate.',
                         type=float,
-                        default=1e-2)
+                        default=1e-3)
 
     args = parser.parse_args()
     main(args)
