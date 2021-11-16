@@ -20,7 +20,7 @@ def train(flow, trainloader, optimizer, epoch, device):
         batch_num += 1
         inputs = inputs.view(inputs.shape[0], inputs.shape[1] * inputs.shape[2] * inputs.shape[3])  # change  shape from BxCxHxW to Bx(C*H*W)
         inputs = inputs.to(device)
-        # TODO Fill in
+    
         optimizer.zero_grad()
         loss = -flow(inputs).mean()
         running_loss += float(loss)
@@ -38,7 +38,7 @@ def test(flow, testloader, filename, epoch, sample_shape, device):
         samples = samples.view(num_samples, sample_shape[0] , sample_shape[1] , sample_shape[2])
         torchvision.utils.save_image(torchvision.utils.make_grid(samples),
                                      './samples/' + filename + 'epoch%d.png' % epoch)
-        # TODO full in
+        
         for n_batches, data in enumerate(testloader, 1):
             inputs, _ = data
             inputs = inputs.view(inputs.shape[0], inputs.shape[1] * inputs.shape[2] * inputs.shape[3])  # change  shape from BxCxHxW to Bx(C*H*W)
@@ -99,7 +99,6 @@ def main(args):
     optimizer = torch.optim.Adam(
         flow.parameters(), lr=args.lr)
 
-    # TODO fill in
     train_losses, test_losses = [], []
     last_train_loss = 10000000
     for epoch in range(args.epochs):
@@ -143,7 +142,8 @@ if __name__ == '__main__':
     parser.add_argument('--coupling-type',
                         help='.',
                         type=str,
-                        default='adaptive')
+                        choices=['affine', 'additive'],
+                        default='additive')
     parser.add_argument('--coupling',
                         help='.',
                         # type=int,
